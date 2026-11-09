@@ -9,9 +9,10 @@
 # - Vom Eingang (JSON von Claude Code auf stdin) liest es nur die Kennung der Sitzung (session_id).
 #   Alles andere, auch den Text eines Prompts, verwirft es ungelesen.
 # - Beim Beginn gibt es Claude einen Zusatzkontext: die Kennung der Sitzung (für «arbeit_beginnen»),
-#   die eigenen offenen Aufgaben (nur Nummer und Status, beides geprüft) und den kDrive-Ordner
-#   dieses Rechners. Kommt der Beginn nicht an, sieht die Person eine Zeile, und Claude arbeitet
-#   wie ohne Plugin.
+#   die eigenen offenen Aufgaben (nur Nummer und Status, beides geprüft) und die Ordner der Ablage
+#   dieses Rechners (P127: kDrive-Ordner und Arbeitsordner, je eine Einstellung des Plugins). Die
+#   Ordner bleiben auf dem Rechner, sie gehen nie an process. Kommt der Beginn nicht an, sieht die
+#   Person eine Zeile, und Claude arbeitet wie ohne Plugin.
 #
 # Was es nie tut:
 # - Mit einem Fehler enden: immer Exit 0. Ein Exit 2 hielte den Prompt oder das Ende auf.
@@ -36,11 +37,15 @@
 # - die Werkzeuge zuerst aus den Ordnern des Systems: ein curl, head oder cat in ~/bin oder einem
 #   relativen Ordner bekäme sonst Schlüssel oder Prompt (Git für Windows legt curl je nach Fassung in
 #   /ucrt64, /mingw64 oder auf ARM64 in /clangarm64);
-# - keine Variablen, die TLS schwächen (Mitschnitt der Sitzungsschlüssel, fremde Zertifikate).
+# - keine Variablen, die TLS schwächen (Mitschnitt der Sitzungsschlüssel, fremde Zertifikate);
+# - keine Vorbelegung der eigenen Variablen (Security-Durchsicht P127): Stünde eine davon schon in
+#   der Umgebung, behielte sie nach POSIX ihr Export-Kennzeichen, und Schlüssel, Eingang oder Ordner
+#   landeten in der Umgebung der Hilfsprozesse.
 set +aeuvx
 unset -f printf command curl head cat tail sed tr grep awk 2>/dev/null
 PATH=/usr/bin:/bin:/ucrt64/bin:/mingw64/bin:/clangarm64/bin${PATH:+:$PATH}
 unset SSLKEYLOGFILE CURL_CA_BUNDLE SSL_CERT_FILE SSL_CERT_DIR
+unset ADRESSE VERSION art schluessel kdrive arbeit eingang wert sid rest antwort liste code frist fehlt kontext
 LC_ALL=C
 # Git Bash (Windows) wandelt sonst Argumente, die wie Pfade aussehen, für curl.exe um.
 MSYS_NO_PATHCONV=1
@@ -48,7 +53,7 @@ MSYS2_ARG_CONV_EXCL='*'
 export PATH LC_ALL MSYS_NO_PATHCONV MSYS2_ARG_CONV_EXCL
 
 ADRESSE='https://process.discere.ch'
-VERSION='1.0.0'
+VERSION='1.1.0'
 
 art=${1-}
 case $art in
@@ -60,7 +65,8 @@ esac
 # bevor der erste Hilfsprozess startet — dessen Umgebung liesse sich sonst von aussen lesen.
 schluessel=${CLAUDE_PLUGIN_OPTION_SIGNAL_SCHLUESSEL-}
 kdrive=${CLAUDE_PLUGIN_OPTION_KDRIVE_WURZEL-}
-unset CLAUDE_PLUGIN_OPTION_SIGNAL_SCHLUESSEL CLAUDE_PLUGIN_OPTION_KDRIVE_WURZEL
+arbeit=${CLAUDE_PLUGIN_OPTION_ARBEITSORDNER-}
+unset CLAUDE_PLUGIN_OPTION_SIGNAL_SCHLUESSEL CLAUDE_PLUGIN_OPTION_KDRIVE_WURZEL CLAUDE_PLUGIN_OPTION_ARBEITSORDNER
 
 # Beim Beginn ohne Signal: eine Zeile für die Person (systemMessage) und für Claude der Hinweis,
 # ohne «client_ref» zu arbeiten — eine Sitzung mit «client_ref», deren Signale fehlen, zählte
@@ -170,19 +176,29 @@ liste=$(printf '%s\n' "$antwort" | sed '$d' | tr -d '\r\n' |
   awk 'NR > 1 { printf ", " } { printf "%s", $0 }')
 antwort=
 
-# Der kDrive-Ordner kommt aus der Einstellung des Plugins (vom Menschen gesetzt): ohne
-# Steuerzeichen, mit maskiertem \ und " für den JSON-Text, höchstens 500 Byte (sonst weg).
-[ ${#kdrive} -le 2000 ] || kdrive=
-kdrive=$(printf '%s' "$kdrive" | tr -d '\000-\037\177')
-[ ${#kdrive} -le 500 ] || kdrive=
-kdrive=$(printf '%s' "$kdrive" | sed -e 's/\\/\\\\/g' -e 's/"/\\"/g')
+# Die Ordner der Ablage kommen aus den Einstellungen des Plugins (vom Menschen gesetzt): je ohne
+# Steuerzeichen, mit maskiertem \ und " für den JSON-Text, höchstens 500 Byte (sonst weg). Ein
+# leerer Ordner kostet keinen Hilfsprozess.
+if [ -n "$kdrive" ]; then
+  [ ${#kdrive} -le 2000 ] || kdrive=
+  kdrive=$(printf '%s' "$kdrive" | tr -d '\000-\037\177')
+  [ ${#kdrive} -le 500 ] || kdrive=
+  kdrive=$(printf '%s' "$kdrive" | sed -e 's/\\/\\\\/g' -e 's/"/\\"/g')
+fi
+if [ -n "$arbeit" ]; then
+  [ ${#arbeit} -le 2000 ] || arbeit=
+  arbeit=$(printf '%s' "$arbeit" | tr -d '\000-\037\177')
+  [ ${#arbeit} -le 500 ] || arbeit=
+  arbeit=$(printf '%s' "$arbeit" | sed -e 's/\\/\\\\/g' -e 's/"/\\"/g')
+fi
+fehlt='hier nicht eingestellt – Dateien mit dieser Wurzel liegen auf einem anderen Rechner; sag das der Person'
 
 kontext="discere process (Plugin): Diese Claude-Code-Sitzung meldet ihre Zeitpunkte an process (Beginn, Prompt, Antwort, Ende; keine Inhalte)."
 kontext="$kontext\\n- Kennung dieser Sitzung: $sid. Gib sie bei «arbeit_beginnen» und «arbeit_beenden» (Connector «discere process») als «client_ref» mit."
 kontext="$kontext\\n- Meine offenen Aufgaben (Nummer und Status): ${liste:-keine}. Inhalte liest du mit «aufgabe_lesen»."
-if [ -n "$kdrive" ]; then
-  kontext="$kontext\\n- kDrive-Ordner dieses Rechners: $kdrive. Pfade der Ablage aus «projekt_lesen» gelten ab hier; bleib darunter."
-fi
+kontext="$kontext\\n- Ablage einer Aufgabe oder eines Projekts («aufgabe_lesen», «arbeit_beginnen», «projekt_lesen»): Ihr Pfad gilt ab dem Ordner ihrer «wurzel» auf diesem Rechner; bleib darunter."
+kontext="$kontext\\n  - «kdrive», der kDrive-Ordner: ${kdrive:-$fehlt}"
+kontext="$kontext\\n  - «arbeitsordner», der Arbeitsordner: ${arbeit:-$fehlt}"
 kontext="$kontext\\n- Arbeit an einer Aufgabe oder einem Projekt rahmst du mit «arbeit_beginnen» und «arbeit_beenden» ein (Skill «Arbeiten mit process»)."
 
 printf '{"hookSpecificOutput":{"hookEventName":"SessionStart","additionalContext":"%s"}}\n' "$kontext"

@@ -34,11 +34,12 @@
 #   «printf» oder «curl» bekäme sonst den Schlüssel. set, unset und exit sind spezielle Builtins,
 #   die keine Funktion ersetzen kann;
 # - die Werkzeuge zuerst aus den Ordnern des Systems: ein curl, head oder cat in ~/bin oder einem
-#   relativen Ordner bekäme sonst Schlüssel oder Prompt (Git für Windows: /mingw64 bzw. /clangarm64);
+#   relativen Ordner bekäme sonst Schlüssel oder Prompt (Git für Windows legt curl je nach Fassung in
+#   /ucrt64, /mingw64 oder auf ARM64 in /clangarm64);
 # - keine Variablen, die TLS schwächen (Mitschnitt der Sitzungsschlüssel, fremde Zertifikate).
 set +aeuvx
 unset -f printf command curl head cat tail sed tr grep awk 2>/dev/null
-PATH=/usr/bin:/bin:/mingw64/bin:/clangarm64/bin${PATH:+:$PATH}
+PATH=/usr/bin:/bin:/ucrt64/bin:/mingw64/bin:/clangarm64/bin${PATH:+:$PATH}
 unset SSLKEYLOGFILE CURL_CA_BUNDLE SSL_CERT_FILE SSL_CERT_DIR
 LC_ALL=C
 # Git Bash (Windows) wandelt sonst Argumente, die wie Pfade aussehen, für curl.exe um.

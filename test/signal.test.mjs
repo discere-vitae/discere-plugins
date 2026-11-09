@@ -43,7 +43,7 @@ const SH = findeSh()
 // auch allein tut, zeigt nur eine sh ohne Starter (Git\usr\bin), die PATH so nimmt, wie es kommt.
 const GIT_USR_BIN_SH = "C:\\Program Files\\Git\\usr\\bin\\sh.exe"
 const SH_OHNE_STARTER = process.platform === "win32" && existsSync(GIT_USR_BIN_SH) ? GIT_USR_BIN_SH : SH
-const PATH_ZEILE = "PATH=/usr/bin:/bin:/mingw64/bin:/clangarm64/bin${PATH:+:$PATH}"
+const PATH_ZEILE = "PATH=/usr/bin:/bin:/ucrt64/bin:/mingw64/bin:/clangarm64/bin${PATH:+:$PATH}"
 // Ein Ordner als Eintrag für PATH in sh: unter Git Bash /c/Users/…, sonst unverändert.
 const posixPfad = (p) =>
   process.platform === "win32" ? `/${p[0].toLowerCase()}${p.slice(2).replace(/\\/g, "/")}` : p
@@ -517,7 +517,7 @@ describe("curl-Aufruf", () => {
     // Die Kopie zeigt auf eine tote Adresse (fände sh doch das echte curl, ginge nichts hinaus) und
     // stellt den Ordner des gefälschten curl vor die Ordner des Systems.
     const skript = kopie(toteAdresse, "signal-falsch.sh", [
-      [PATH_ZEILE, `PATH='${posixPfad(ordner)}':/usr/bin:/bin:/mingw64/bin:/clangarm64/bin\${PATH:+:$PATH}`],
+      [PATH_ZEILE, `PATH='${posixPfad(ordner)}':/usr/bin:/bin:/ucrt64/bin:/mingw64/bin:/clangarm64/bin\${PATH:+:$PATH}`],
     ])
     const r = await lauf("beginn", { skript })
     assert.equal(r.code, 0)
@@ -591,7 +591,7 @@ describe("Umgebung", () => {
       { mode: 0o755 },
     )
     const skript = kopie(toteAdresse, "signal-env.sh", [
-      [PATH_ZEILE, `PATH='${posixPfad(ordner)}':/usr/bin:/bin:/mingw64/bin:/clangarm64/bin\${PATH:+:$PATH}`],
+      [PATH_ZEILE, `PATH='${posixPfad(ordner)}':/usr/bin:/bin:/ucrt64/bin:/mingw64/bin:/clangarm64/bin\${PATH:+:$PATH}`],
     ])
     // Auch mit allexport von aussen (bash exportierte sonst jede Zuweisung, samt Schlüssel).
     for (const shellopts of [undefined, "allexport", "xtrace:allexport"]) {

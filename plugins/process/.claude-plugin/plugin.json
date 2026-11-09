@@ -1,0 +1,26 @@
+{
+  "name": "process",
+  "version": "1.0.0",
+  "description": "Arbeiten mit discere process in Claude Code: Die Hooks melden Beginn, Prompt, Antwort und Ende jeder Sitzung an process (nur Zeitpunkte, nie Inhalte). Der Skill sagt Claude, wann «kontext» und wann «arbeit_beginnen».",
+  "author": {
+    "name": "discere AG"
+  },
+  "homepage": "https://github.com/discere-vitae/discere-plugins",
+  "repository": "https://github.com/discere-vitae/discere-plugins",
+  "keywords": ["discere", "process", "zeiterfassung", "aufgaben"],
+  "userConfig": {
+    "signal_schluessel": {
+      "type": "string",
+      "title": "Signal-Schlüssel",
+      "description": "Aus process: Profil → KI-Verbindungen → Neuer Schlüssel, Zweck «nur Signale». Beginnt mit dpk_. Nicht der Schlüssel eines Connectors.",
+      "sensitive": true,
+      "required": true
+    },
+    "kdrive_wurzel": {
+      "type": "string",
+      "title": "kDrive-Ordner (freiwillig)",
+      "description": "Wo das kDrive auf diesem Rechner liegt, etwa C:\\Users\\…\\kDrive oder /Users/…/kDrive. Leer lassen, wenn es hier keines gibt.",
+      "required": false
+    }
+  }
+}

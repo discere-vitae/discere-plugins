@@ -1,0 +1,51 @@
+{
+  "description": "discere process: meldet Beginn, Prompt, Antwort und Ende dieser Sitzung (nur Zeitpunkte, nie Inhalte). Die Hooks enden immer ohne Fehler und warten nie lange.",
+  "hooks": {
+    "SessionStart": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "/bin/sh \"${CLAUDE_PLUGIN_ROOT}/hooks/signal.sh\" beginn",
+            "timeout": 8
+          }
+        ]
+      }
+    ],
+    "UserPromptSubmit": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "/bin/sh \"${CLAUDE_PLUGIN_ROOT}/hooks/signal.sh\" prompt || true",
+            "async": true,
+            "timeout": 10
+          }
+        ]
+      }
+    ],
+    "Stop": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "/bin/sh \"${CLAUDE_PLUGIN_ROOT}/hooks/signal.sh\" antwort || true",
+            "async": true,
+            "timeout": 10
+          }
+        ]
+      }
+    ],
+    "SessionEnd": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "/bin/sh \"${CLAUDE_PLUGIN_ROOT}/hooks/signal.sh\" ende || true",
+            "timeout": 2
+          }
+        ]
+      }
+    ]
+  }
+}

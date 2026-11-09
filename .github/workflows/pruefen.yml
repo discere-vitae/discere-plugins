@@ -1,0 +1,33 @@
+# Prüft das Hook-Skript auf allen Systemen, auf denen Claude Code es ausführt:
+# Linux (sh = dash), macOS (sh = bash 3.2) und Windows (Git Bash), dort auf x64 und auf ARM64
+# (wie Martins Rechner: Git für Windows mit /clangarm64 und curl mit Schannel).
+name: Prüfen
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+
+permissions:
+  contents: read
+
+jobs:
+  test:
+    name: Tests (${{ matrix.os }})
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, macos-latest, windows-latest, windows-11-arm]
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - name: Werkzeuge
+        shell: bash
+        run: |
+          node --version
+          sh -c 'command -v curl head cat grep sed awk tr tail'
+      - name: Tests
+        run: node --test test/signal.test.mjs

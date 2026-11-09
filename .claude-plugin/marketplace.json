@@ -1,0 +1,14 @@
+{
+  "name": "discere",
+  "description": "Plugins für Claude Code aus der discere-Suite",
+  "owner": {
+    "name": "discere AG"
+  },
+  "plugins": [
+    {
+      "name": "process",
+      "source": "./plugins/process",
+      "description": "Arbeiten mit discere process: meldet Beginn, Prompt, Antwort und Ende jeder Sitzung an process (nur Zeitpunkte, nie Inhalte) und bringt den Skill «Arbeiten mit process» mit."
+    }
+  ]
+}

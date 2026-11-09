@@ -1,0 +1,12 @@
+{
+  "name": "discere-plugins",
+  "private": true,
+  "type": "module",
+  "description": "Plugins für Claude Code aus der discere-Suite. Keine Abhängigkeiten; nur für die Prüfung.",
+  "scripts": {
+    "test": "node --test test/signal.test.mjs"
+  },
+  "engines": {
+    "node": ">=20"
+  }
+}

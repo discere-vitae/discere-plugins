@@ -5,13 +5,15 @@ Plugins für [Claude Code](https://code.claude.com) aus der discere-Suite. Das R
 
 ## Plugin «process»
 
-Für die Arbeit mit [discere process](https://process.discere.ch) in Claude Code (Task P120, Definition P113 §6.4).
+Für die Arbeit mit [discere process](https://process.discere.ch) in Claude Code (Tasks P120 und P127, Definition
+P113 §6.4).
 
 - **Vier Hooks** melden Beginn, Prompt, Antwort und Ende jeder Sitzung an process. Gesendet werden nur die Art des
   Signals und die Kennung der Sitzung; den Zeitpunkt setzt process bei der Ankunft. Nie gesendet werden Prompts,
   Antworten, Ordner oder Dateinamen. Aus den Zeitpunkten rechnet process die Menschenzeit für den Tagesabschluss.
 - **Beim Beginn** bekommt Claude die Kennung der Sitzung (für `arbeit_beginnen`), die eigenen offenen Aufgaben (nur
-  Nummer und Status) und, wenn eingestellt, den kDrive-Ordner des Rechners.
+  Nummer und Status) und die Ordner der Ablage dieses Rechners: den kDrive-Ordner und den Arbeitsordner, je wenn
+  eingestellt (siehe «Ordner der Ablage»).
 - **Der Skill «Arbeiten mit process»** sagt Claude, wann `kontext` und wann `arbeit_beginnen`.
 - **Die Werkzeuge** (`kontext`, `arbeit_beginnen` …) kommen nicht aus dem Plugin, sondern vom Connector «discere
   process» in claude.ai. Er erscheint in Claude Code von selbst.
@@ -30,9 +32,9 @@ Für die Arbeit mit [discere process](https://process.discere.ch) in Claude Code
 
    Ab Claude Code 2.1.275 geht es auch in einem Schritt:
    `/plugin install process --marketplace discere-vitae/discere-plugins`.
-   Beim Aktivieren fragt Claude Code nach dem Signal-Schlüssel und, freiwillig, nach dem kDrive-Ordner. Fragt es
-   nicht (etwa nach `claude plugin install` im Terminal), dann in Claude Code `/plugin configure process@discere`.
-   Danach Claude Code neu starten.
+   Beim Aktivieren fragt Claude Code nach dem Signal-Schlüssel und, freiwillig, nach dem kDrive-Ordner und dem
+   Arbeitsordner. Fragt es nicht (etwa nach `claude plugin install` im Terminal), dann in Claude Code
+   `/plugin configure process@discere`. Danach Claude Code neu starten.
 3. **Connector verbinden**, falls noch nicht geschehen: in claude.ai unter Einstellungen → Connectors «discere
    process», mit **demselben process-Login** wie der Signal-Schlüssel. Sonst gehören die Signale einer anderen
    Person als die Arbeit.
@@ -42,6 +44,26 @@ Für die Arbeit mit [discere process](https://process.discere.ch) in Claude Code
 (macOS bietet die Installation beim ersten Mal an) und curl (ist dabei). Ein Proxy, der TLS aufbricht, geht nur,
 wenn sein Zertifikat im System hinterlegt ist: Zertifikate aus Umgebungsvariablen (`SSL_CERT_FILE` …) nimmt das
 Skript bewusst nicht, sonst kommen die Signale nicht an («nicht erreichbar»).
+
+### Ordner der Ablage
+
+Eine Aufgabe oder ein Projekt in process kann eine Ablage haben: wo die Dateien liegen. process kennt davon nur die
+Wurzel, den Pfad ab ihr und einen Link, nie den Ordner auf dem Rechner. Den nennen zwei freiwillige Einstellungen:
+
+| Wurzel | Einstellung | Beispiel |
+|---|---|---|
+| `kdrive` | kDrive-Ordner | `C:\Users\…\kDrive`, `/Users/…/kDrive` |
+| `arbeitsordner` | Arbeitsordner | ein lokaler Ordner, etwa `C:\AI` |
+
+- Beide bleiben auf dem Rechner. Das Skript gibt sie nur Claude in den Zusatzkontext, ohne Steuerzeichen; ein Ordner
+  über 500 Byte fällt ganz weg. An process gehen sie nie.
+- Jeder Ordner unter dem Arbeitsordner kann eine Ablage werden — und eine Ablage setzen in process alle, die die
+  Aufgabe ändern dürfen. Den Arbeitsordner also bewusst wählen. Bevor Claude in einer Ablage zum ersten Mal liest
+  oder schreibt, nennt es den aufgelösten Ordner. Ordner mit `.` vorne (`.git`, `.claude`) und Kurznamen von Windows (`GIT~1`)
+  lehnt process als Ablage ab.
+- Ist ein Ordner nicht eingestellt, sagt Claude der Person, dass die Dateien dieser Wurzel auf einem anderen Rechner
+  liegen.
+- Ändern: in Claude Code `/plugin configure process@discere`, danach Claude Code neu starten.
 
 ### Wenn process nicht antwortet
 
@@ -86,6 +108,10 @@ Ein Update kommt nur mit einer neuen Version in `plugin.json`. Holen in Claude C
 discere, oder im Terminal mit `claude plugin update process@discere`. Das automatische Update bleibt für diese
 Sammlung aus (Vorgabe von Claude Code): Ein Update bringt Code, der in jeder Sitzung läuft — vorher ansehen, was
 sich geändert hat.
+
+- **1.1.0** (P127): die Einstellung «Arbeitsordner (freiwillig)» und im Zusatzkontext beide Ordner der Ablage. Nach
+  dem Update den Arbeitsordner mit `/plugin configure process@discere` eintragen (oder leer lassen).
+- **1.0.0** (P120): Hooks, Signal-Schlüssel, kDrive-Ordner, Skill.
 
 ## Entwickeln
 

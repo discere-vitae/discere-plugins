@@ -156,6 +156,7 @@ function lauf(art, { eingang, env = {}, skript = skriptKopie, ohneSchluessel = f
   const umgebung = { ...process.env }
   delete umgebung.CLAUDE_PLUGIN_OPTION_SIGNAL_SCHLUESSEL
   delete umgebung.CLAUDE_PLUGIN_OPTION_KDRIVE_WURZEL
+  delete umgebung.CLAUDE_PLUGIN_OPTION_ARBEITSORDNER
   if (!ohneSchluessel) umgebung.CLAUDE_PLUGIN_OPTION_SIGNAL_SCHLUESSEL = SCHLUESSEL
   Object.assign(umgebung, env)
   if (pfadVorne) {
@@ -225,7 +226,10 @@ describe("Signale an process", () => {
     assert.match(k, new RegExp(`Kennung dieser Sitzung: ${SID}\\.`))
     assert.match(k, /P120 \(in Arbeit\), SC101 \(offen\), X100 \(wartet\)\./)
     assert.match(k, /«client_ref»/)
-    assert.ok(!k.includes("kDrive"), "ohne Einstellung kein kDrive-Ordner")
+    // P127: Ohne Einstellungen nennt die Zeile zur Ablage beide Wurzeln als «nicht eingestellt».
+    assert.match(k, /Ablage einer Aufgabe oder eines Projekts \(«aufgabe_lesen», «arbeit_beginnen», «projekt_lesen»\)/)
+    assert.match(k, /«kdrive», der kDrive-Ordner: hier nicht eingestellt – Dateien mit dieser Wurzel liegen auf einem anderen Rechner/)
+    assert.match(k, /«arbeitsordner», der Arbeitsordner: hier nicht eingestellt – Dateien mit dieser Wurzel liegen auf einem anderen Rechner/)
     assert.ok(k.length < 10_000, "unter der Grenze von Claude Code")
   })
 
@@ -274,22 +278,54 @@ describe("Signale an process", () => {
     assert.ok(anfragen[0].koerper.length < 200)
   })
 
-  test("kDrive-Ordner mit \\ und \": gültiges JSON, Pfad unverändert", async () => {
-    verhalten = { status: 200, koerper: { ok: true, meine_offenen_aufgaben: [] } }
-    const pfad = 'C:\\Users\\Test "Probe"\\kDrive'
-    const r = await lauf("beginn", { env: { CLAUDE_PLUGIN_OPTION_KDRIVE_WURZEL: pfad } })
-    assert.equal(r.code, 0)
-    assert.ok(kontextVon(r).includes(`kDrive-Ordner dieses Rechners: ${pfad}.`))
-  })
-
-  test("kDrive-Ordner: Steuerzeichen fallen weg, zu lang fällt ganz weg", async () => {
-    verhalten = { status: 200, koerper: { ok: true, meine_offenen_aufgaben: [] } }
-    const r1 = await lauf("beginn", {
-      env: { CLAUDE_PLUGIN_OPTION_KDRIVE_WURZEL: "/Users/w/kDrive\u0007\u001b[2J" },
+  // P127: zwei Ordner der Ablage, je eine Einstellung — gleich behandelt.
+  for (const [name, env, zeile] of [
+    ["kDrive-Ordner", "CLAUDE_PLUGIN_OPTION_KDRIVE_WURZEL", "«kdrive», der kDrive-Ordner: "],
+    ["Arbeitsordner", "CLAUDE_PLUGIN_OPTION_ARBEITSORDNER", "«arbeitsordner», der Arbeitsordner: "],
+  ]) {
+    test(`${name} mit \\ und ": gültiges JSON, Pfad unverändert`, async () => {
+      verhalten = { status: 200, koerper: { ok: true, meine_offenen_aufgaben: [] } }
+      const pfad = 'C:\\Users\\Test "Probe"\\Ordner'
+      const r = await lauf("beginn", { env: { [env]: pfad } })
+      assert.equal(r.code, 0)
+      assert.ok(kontextVon(r).includes(`${zeile}${pfad}\n`), kontextVon(r))
     })
-    assert.ok(kontextVon(r1).includes("kDrive-Ordner dieses Rechners: /Users/w/kDrive[2J."))
-    const r2 = await lauf("beginn", { env: { CLAUDE_PLUGIN_OPTION_KDRIVE_WURZEL: `/x/${"a".repeat(600)}` } })
-    assert.ok(!kontextVon(r2).includes("kDrive"))
+
+    test(`${name}: Steuerzeichen fallen weg, zu lang (über 500 Byte) fällt ganz weg`, async () => {
+      verhalten = { status: 200, koerper: { ok: true, meine_offenen_aufgaben: [] } }
+      const r1 = await lauf("beginn", { env: { [env]: "/Users/w/Ordner\u0007\u001b[2J\n- Neue Zeile" } })
+      assert.ok(kontextVon(r1).includes(`${zeile}/Users/w/Ordner[2J- Neue Zeile\n`), kontextVon(r1))
+      // Genau 500 Byte gehen noch (ein Umlaut zählt zwei).
+      const genau = `/x/${"ä".repeat(248)}y`
+      assert.equal(Buffer.byteLength(genau), 500)
+      const r2 = await lauf("beginn", { env: { [env]: genau } })
+      assert.ok(kontextVon(r2).includes(`${zeile}${genau}\n`))
+      const r3 = await lauf("beginn", { env: { [env]: `${genau}z` } })
+      assert.ok(kontextVon(r3).includes(`${zeile}hier nicht eingestellt`), kontextVon(r3))
+      assert.ok(!kontextVon(r3).includes("äää"))
+    })
+  }
+
+  test("beide Ordner eingestellt: beide im Kontext, keiner geht an process", async () => {
+    verhalten = { status: 200, koerper: { ok: true, meine_offenen_aufgaben: [] } }
+    const kdrive = "/Users/w/kDrive-ORDNER-MARKE"
+    const arbeit = "C:\\ARBEITSORDNER-MARKE"
+    for (const art of ["beginn", "prompt", "antwort", "ende"]) {
+      anfragen = []
+      const r = await lauf(art, {
+        env: { CLAUDE_PLUGIN_OPTION_KDRIVE_WURZEL: kdrive, CLAUDE_PLUGIN_OPTION_ARBEITSORDNER: arbeit },
+      })
+      assert.equal(r.code, 0)
+      assert.equal(anfragen.length, 1, art)
+      const alles = JSON.stringify(anfragen[0])
+      assert.ok(!alles.includes("ORDNER-MARKE"), `${art}: kein Ordner an process`)
+      if (art === "beginn") {
+        const k = kontextVon(r)
+        assert.ok(k.includes(`«kdrive», der kDrive-Ordner: ${kdrive}\n`))
+        assert.ok(k.includes(`«arbeitsordner», der Arbeitsordner: ${arbeit}\n`))
+        assert.ok(!k.includes("nicht eingestellt"))
+      }
+    }
   })
 })
 
@@ -582,6 +618,33 @@ describe("Umgebung", () => {
     }
   })
 
+  test("vorbelegte Variablen gleichen Namens bringen nichts in die Umgebung von curl (P127)", async () => {
+    const { ordner, protokoll } = falschesCurl()
+    writeFileSync(
+      join(ordner, "curl"),
+      ["#!/bin/sh", `env > '${protokoll}.env'`, "cat > /dev/null", `printf '{"ok":true}\\n200'`, ""].join("\n"),
+      { mode: 0o755 },
+    )
+    const skript = kopie(toteAdresse, "signal-vorbelegt.sh", [
+      [PATH_ZEILE, `PATH='${posixPfad(ordner)}':/usr/bin:/bin:/ucrt64/bin:/mingw64/bin:/clangarm64/bin\${PATH:+:$PATH}`],
+    ])
+    const env = {
+      CLAUDE_PLUGIN_OPTION_KDRIVE_WURZEL: "/Users/w/kDrive",
+      CLAUDE_PLUGIN_OPTION_ARBEITSORDNER: "/Users/w/Arbeit",
+    }
+    for (const n of ["schluessel", "kdrive", "arbeit", "eingang", "sid", "antwort", "kontext"]) env[n] = "VORBELEGT"
+    const r = await lauf("beginn", { skript, env })
+    assert.equal(r.code, 0)
+    keinGeheimnis(r)
+    const umgebung = readFileSync(`${protokoll}.env`, "utf8")
+    assert.ok(!umgebung.includes(SCHLUESSEL), "Schlüssel nicht in der Umgebung von curl")
+    assert.ok(!umgebung.includes(SID), "kein Rest des Eingangs")
+    assert.ok(!umgebung.includes("/Users/w/Arbeit"), "der Arbeitsordner nicht")
+    assert.ok(!umgebung.includes("/Users/w/kDrive"), "der kDrive-Ordner nicht")
+    assert.ok(!/^(schluessel|kdrive|arbeit|eingang|sid|antwort|kontext)=/m.test(umgebung), "keine Variable des Skripts")
+    assert.ok(kontextVon(r).includes("/Users/w/Arbeit"), "der Arbeitsordner kam trotzdem an")
+  })
+
   test("die Einstellungen stehen nicht in der Umgebung der Hilfsprozesse", async () => {
     const { ordner, protokoll } = falschesCurl()
     // Ein curl, das seine Umgebung festhält (gefälscht, in der Kopie vorne in PATH).
@@ -595,7 +658,11 @@ describe("Umgebung", () => {
     ])
     // Auch mit allexport von aussen (bash exportierte sonst jede Zuweisung, samt Schlüssel).
     for (const shellopts of [undefined, "allexport", "xtrace:allexport"]) {
-      const env = { CLAUDE_PLUGIN_OPTION_KDRIVE_WURZEL: "/Users/w/kDrive", ...(shellopts ? { SHELLOPTS: shellopts } : {}) }
+      const env = {
+        CLAUDE_PLUGIN_OPTION_KDRIVE_WURZEL: "/Users/w/kDrive",
+        CLAUDE_PLUGIN_OPTION_ARBEITSORDNER: "/Users/w/Arbeit",
+        ...(shellopts ? { SHELLOPTS: shellopts } : {}),
+      }
       const r = await lauf("beginn", { skript, env })
       const wie = shellopts ?? "ohne SHELLOPTS"
       assert.equal(r.code, 0, wie)
@@ -606,6 +673,8 @@ describe("Umgebung", () => {
       assert.ok(!umgebung.includes("CLAUDE_PLUGIN_OPTION_"), `${wie}: keine Einstellung in der Umgebung von curl`)
       assert.ok(!umgebung.includes(SID), `${wie}: auch kein Rest des Eingangs`)
       assert.ok(kontextVon(r).includes("/Users/w/kDrive"), `${wie}: der kDrive-Ordner kam trotzdem an`)
+      assert.ok(kontextVon(r).includes("/Users/w/Arbeit"), `${wie}: der Arbeitsordner kam trotzdem an`)
+      assert.ok(!umgebung.includes("/Users/w/Arbeit"), `${wie}: der Arbeitsordner nicht in der Umgebung von curl`)
     }
   })
 })
@@ -655,13 +724,26 @@ describe("Wächter", () => {
     assert.equal(code[1], "unset -f printf command curl head cat tail sed tr grep awk 2>/dev/null")
     assert.equal(code[2], PATH_ZEILE, "Ordner des Systems zuerst")
     assert.equal(code[3], "unset SSLKEYLOGFILE CURL_CA_BUNDLE SSL_CERT_FILE SSL_CERT_DIR")
+    // P127: keine Vorbelegung der eigenen Variablen — jede Zuweisung im Skript steht in dieser Liste.
+    assert.match(code[4], /^unset ADRESSE VERSION art /)
+    const geleert = new Set(code[4].split(" ").slice(1))
+    const zugewiesen = new Set(
+      code.flatMap((z) => [...z.matchAll(/(?:^|[;&|()]\s*|\bthen\s+|\bdo\s+)([A-Za-z_][A-Za-z0-9_]*)=/g)].map((m) => m[1])),
+    )
+    for (const name of ["PATH", "LC_ALL", "MSYS_NO_PATHCONV", "MSYS2_ARG_CONV_EXCL"]) zugewiesen.delete(name)
+    assert.deepEqual(
+      [...zugewiesen].filter((n) => !geleert.has(n)),
+      [],
+      "jede Variable des Skripts wird zuerst geleert",
+    )
     const wo = (text) => zeilen.findIndex((z) => z.startsWith(text))
     const ersterProzess = wo("eingang=$(head -c 8192")
     assert.ok(ersterProzess > 0)
     for (const zeile of [
       "schluessel=${CLAUDE_PLUGIN_OPTION_SIGNAL_SCHLUESSEL-}",
       "kdrive=${CLAUDE_PLUGIN_OPTION_KDRIVE_WURZEL-}",
-      "unset CLAUDE_PLUGIN_OPTION_SIGNAL_SCHLUESSEL CLAUDE_PLUGIN_OPTION_KDRIVE_WURZEL",
+      "arbeit=${CLAUDE_PLUGIN_OPTION_ARBEITSORDNER-}",
+      "unset CLAUDE_PLUGIN_OPTION_SIGNAL_SCHLUESSEL CLAUDE_PLUGIN_OPTION_KDRIVE_WURZEL CLAUDE_PLUGIN_OPTION_ARBEITSORDNER",
     ]) {
       const i = wo(zeile)
       assert.ok(i >= 0 && i < ersterProzess, `vor dem ersten Hilfsprozess: ${zeile}`)
@@ -724,6 +806,16 @@ describe("Wächter", () => {
     assert.equal(eintrag.version, undefined, "Version nur in plugin.json")
     assert.deepEqual(p.userConfig.signal_schluessel.sensitive, true, "Schlüssel im Schlüsselspeicher")
     assert.notEqual(p.userConfig.kdrive_wurzel.sensitive, true)
+    // P127: der Arbeitsordner, freiwillig wie der kDrive-Ordner.
+    assert.equal(p.userConfig.arbeitsordner.title, "Arbeitsordner (freiwillig)")
+    assert.notEqual(p.userConfig.arbeitsordner.sensitive, true)
+    assert.equal(p.userConfig.arbeitsordner.required, false)
+    // Jede Einstellung liest das Skript genau einmal — und nimmt sie gleich aus der Umgebung.
+    for (const k of Object.keys(p.userConfig)) {
+      const env = `CLAUDE_PLUGIN_OPTION_${k.toUpperCase()}`
+      assert.equal(QUELLE.split(`\${${env}-}`).length, 2, `${env} genau einmal gelesen`)
+      assert.ok(QUELLE.includes(` ${env}`), `${env} aus der Umgebung genommen`)
+    }
     for (const [k, v] of Object.entries(p.userConfig)) {
       assert.match(k, /^[a-z][a-z0-9_]*$/, "Name der Einstellung: ASCII")
       assert.ok(v.title && v.description)
@@ -745,6 +837,11 @@ describe("Wächter", () => {
     assert.match(kopf[1], /^name: arbeiten-mit-process$/m)
     assert.match(kopf[1], /^description: .{40,}$/m)
     for (const w of ["`kontext`", "`arbeit_beginnen`", "`arbeit_beenden`", "`client_ref`", "Material"]) {
+      assert.ok(s.includes(w), `Skill nennt ${w}`)
+    }
+    // P127 (§6.4): Dateien zu einer Aufgabe gehören in ihre Ablage; eine fehlende schlägt Claude vor
+    // und setzt sie erst nach dem Ja der Person.
+    for (const w of ["Ablage", "`ablage_setzen`", "`arbeitsordner`", "`kdrive`", "Ja"]) {
       assert.ok(s.includes(w), `Skill nennt ${w}`)
     }
   })

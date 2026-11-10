@@ -57,7 +57,7 @@ MSYS2_ARG_CONV_EXCL='*'
 export PATH LC_ALL MSYS_NO_PATHCONV MSYS2_ARG_CONV_EXCL
 
 ADRESSE='https://process.discere.ch'
-VERSION='1.1.1'
+VERSION='1.2.0'
 
 art=${1-}
 case $art in

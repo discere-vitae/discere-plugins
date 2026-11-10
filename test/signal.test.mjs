@@ -1071,5 +1071,44 @@ describe("Wächter", () => {
     ]) {
       assert.ok(s.includes(w), `Skill nennt ${w}`)
     }
+    // P130 (M1): wann Claude fürs Gedächtnis vorschlägt — bei `arbeit_beenden` und auf «merk dir …»,
+    // höchstens zwei je Sitzung, mit der Sitzung und einer Ebene, der Person genannt.
+    for (const w of [
+      "`merken_vorschlagen`",
+      "bevor du `arbeit_beenden` aufrufst",
+      "«merk dir …»",
+      "höchstens zwei Einträge je Sitzung",
+      "von dir aus",
+      "ausdrücklich darum bittet",
+      "`sitzung`",
+      "nenn sie der Person",
+    ]) {
+      assert.ok(s.includes(w), `Skill nennt ${w}`)
+    }
+    // P130 (M2): was hineingehört; Muster von Schlüsseln lehnt process ab. Ebenen samt «kunde», aus
+    // privat nur «persoenlich», «ersetzt» statt eines Doppels.
+    for (const w of [
+      "was in keinem Dokument steht",
+      "Geheimnisse",
+      "`SCHLUESSEL_IM_TEXT`",
+      "`firma`",
+      "`kunde`",
+      "`projekt`",
+      "`persoenlich`",
+      "nur `persoenlich`",
+      "`ersetzt`",
+    ]) {
+      assert.ok(s.includes(w), `Skill nennt ${w}`)
+    }
+    // P130 (M9): Wissen zu Kunden, Projekten und zur Arbeit der Firma nicht ins lokale Memory.
+    for (const w of ["Nicht ins lokale Memory", "Wissen zu Kunden, Projekten und zur Arbeit der Firma"]) {
+      assert.ok(s.includes(w), `Skill nennt ${w}`)
+    }
+    // Security-Durchsicht P130: zu Kunden «ohne KI» nichts, auf keiner Ebene; die Firma nennen.
+    for (const w of ["Kunden «ohne KI»", "auf keiner Ebene", "Ebene, Firma und Zeile"]) {
+      assert.ok(s.includes(w), `Skill nennt ${w}`)
+    }
+    // Das Repo ist öffentlich: im Skill kein echter Schlüssel, nur die Vorsätze.
+    assert.doesNotMatch(s, /dpk_[A-Za-z0-9_-]{20,}|sk_live_[A-Za-z0-9]{16,}|ghp_[A-Za-z0-9]{30,}/)
   })
 })

@@ -113,6 +113,12 @@ discere, oder im Terminal mit `claude plugin update process@discere`. Das automa
 Sammlung aus (Vorgabe von Claude Code): Ein Update bringt Code, der in jeder Sitzung läuft — vorher ansehen, was
 sich geändert hat.
 
+- **1.2.0** (P130): Der Skill sagt Claude, wann es etwas fürs Gedächtnis von process vorschlägt (bevor es
+  `arbeit_beenden` aufruft und wenn die Person «merk dir …» sagt, höchstens zwei Vorschläge je Sitzung, der Person
+  genannt, mit Ebene, Firma und Zeile), was hineingehört (was in keinem Dokument steht, nie ein Geheimnis, nichts zu
+  Kunden «ohne KI»; die Ebenen samt `kunde`, `ersetzt` statt eines Doppels) und dass Wissen zu Kunden, Projekten und
+  zur Arbeit der Firma nicht ins lokale Memory von Claude Code gehört. Die Hooks sind unverändert. Braucht process mit
+  P130 (Ebene «Kunde», Vorschläge an der Sitzung).
 - **1.1.1** (P129): Die Ordner der Ablage stehen auch dann im Zusatzkontext, wenn kein Signal ankommt (Schlüssel
   fehlt oder ist ungültig, curl fehlt, process ist nicht erreichbar oder antwortet mit einem Fehler). Bisher hiess es
   dann, sie seien nicht eingestellt. Der Skill: Hat jemand anderes die Ablage einer Aufgabe gesetzt, fragt Claude vor

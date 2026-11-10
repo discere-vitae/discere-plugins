@@ -545,6 +545,192 @@ describe("Ausfall: nie hängen, nie Fehler", () => {
   })
 })
 
+// ── P129: die Ordner der Ablage auch ohne Signal ─────────────────────────────
+
+describe("Ordner der Ablage auch ohne Signal (P129)", () => {
+  // Marken in beiden Ordnern: Sie dürfen nur im Kontext stehen, nie in einer Anfrage an process.
+  const KDRIVE = 'C:\\Users\\Test "Probe"\\kDrive-ORDNER'
+  const ARBEIT = "/Users/w/Arbeit-ORDNER"
+  const MIT_ORDNERN = { CLAUDE_PLUGIN_OPTION_KDRIVE_WURZEL: KDRIVE, CLAUDE_PLUGIN_OPTION_ARBEITSORDNER: ARBEIT }
+  const KDRIVE_ZEILE = "«kdrive», der kDrive-Ordner: "
+  const ARBEIT_ZEILE = "«arbeitsordner», der Arbeitsordner: "
+  const FEHLT = "hier nicht eingestellt – Dateien mit dieser Wurzel liegen auf einem anderen Rechner"
+
+  // Je Ausfall: wie das Skript läuft, was die Zeile für die Person sagt, wie viele Signale hinausgehen.
+  const AUSFAELLE = [
+    ["ohne Schlüssel", () => ({ ohneSchluessel: true }), /Signal-Schlüssel fehlt/, 0],
+    [
+      "Schlüssel in falscher Form",
+      () => ({ env: { CLAUDE_PLUGIN_OPTION_SIGNAL_SCHLUESSEL: "dpk_kurz" } }),
+      /Signal-Schlüssel fehlt/,
+      0,
+    ],
+    [
+      "Schlüssel ungültig (401)",
+      () => {
+        verhalten = { status: 401, koerper: { error: "x" } }
+        return {}
+      },
+      /Signal-Schlüssel ungültig/,
+      1,
+    ],
+    ["ohne Server", () => ({ skript: kopie(toteAdresse, "signal-tot-p129.sh") }), /nicht erreichbar/, 0],
+    [
+      "process mit Fehler 500",
+      () => {
+        verhalten = { status: 500, koerper: {} }
+        return {}
+      },
+      /Fehler 500/,
+      1,
+    ],
+    ["Kennung der Sitzung fehlt", () => ({ eingang: "{}" }), /Kennung der Sitzung fehlt/, 0],
+  ]
+  for (const [name, vorbereiten, muster, signale] of AUSFAELLE) {
+    for (const mit of [false, true]) {
+      test(`${name}, ${mit ? "mit" : "ohne"} Ordner: feste Zeile, ohne client_ref, die Zeilen zur Ablage`, async () => {
+        const o = vorbereiten()
+        const r = await lauf("beginn", { ...o, env: { ...(o.env ?? {}), ...(mit ? MIT_ORDNERN : {}) } })
+        assert.equal(r.code, 0)
+        keinGeheimnis(r)
+        const a = ausgabe(r) // gültiges JSON, auch mit \ und " im Ordner
+        assert.match(a.systemMessage, muster)
+        assert.equal(a.hookSpecificOutput.hookEventName, "SessionStart")
+        const k = a.hookSpecificOutput.additionalContext
+        assert.match(k, /^discere process \(Plugin\): Die Signale dieser Sitzung kommen nicht an \(/)
+        assert.match(k, /wie ohne Plugin: «arbeit_beginnen» und «arbeit_beenden» ohne «client_ref»\.\n/)
+        assert.ok(!k.includes(SID), "keine Kennung, wenn Signale fehlen")
+        assert.ok(
+          k.includes("\n- Ablage einer Aufgabe oder eines Projekts («aufgabe_lesen», «arbeit_beginnen», «projekt_lesen»)"),
+          k,
+        )
+        if (mit) {
+          assert.ok(k.includes(`${KDRIVE_ZEILE}${KDRIVE}\n`), k)
+          assert.ok(k.endsWith(`${ARBEIT_ZEILE}${ARBEIT}`), k)
+          assert.ok(!k.includes("nicht eingestellt"), k)
+        } else {
+          assert.ok(k.includes(`${KDRIVE_ZEILE}${FEHLT}`), k)
+          assert.ok(k.includes(`${ARBEIT_ZEILE}${FEHLT}`), k)
+        }
+        assert.ok(k.length < 10_000, "unter der Grenze von Claude Code")
+        assert.equal(anfragen.length, signale)
+        assert.ok(!JSON.stringify(anfragen).includes("ORDNER"), "kein Ordner an process")
+      })
+    }
+  }
+
+  test("ohne Schlüssel: Steuerzeichen fallen weg, ein Ordner über 500 Byte fällt ganz weg", async () => {
+    // Genau 500 Byte gehen noch (ein Umlaut zählt zwei).
+    const genau = `/x/${"ä".repeat(248)}y`
+    assert.equal(Buffer.byteLength(genau), 500)
+    const r1 = await lauf("beginn", {
+      ohneSchluessel: true,
+      env: {
+        CLAUDE_PLUGIN_OPTION_KDRIVE_WURZEL: "/Users/w/Ordner\u0007\u001b[2J\n- Neue Zeile",
+        CLAUDE_PLUGIN_OPTION_ARBEITSORDNER: genau,
+      },
+    })
+    assert.equal(r1.code, 0)
+    const k1 = kontextVon(r1)
+    assert.ok(k1.includes(`${KDRIVE_ZEILE}/Users/w/Ordner[2J- Neue Zeile\n`), k1)
+    assert.ok(k1.endsWith(`${ARBEIT_ZEILE}${genau}`), k1)
+    const r2 = await lauf("beginn", {
+      ohneSchluessel: true,
+      env: {
+        CLAUDE_PLUGIN_OPTION_KDRIVE_WURZEL: "y".repeat(2001),
+        CLAUDE_PLUGIN_OPTION_ARBEITSORDNER: `${genau}z`,
+      },
+    })
+    assert.equal(r2.code, 0)
+    const k2 = kontextVon(r2)
+    assert.ok(k2.includes(`${KDRIVE_ZEILE}${FEHLT}`), k2)
+    assert.ok(k2.includes(`${ARBEIT_ZEILE}${FEHLT}`), k2)
+    assert.ok(!k2.includes("äää") && !k2.includes("yyy"), "nichts vom zu langen Ordner")
+  })
+
+  test("ein Signal-Schlüssel im Feld eines Ordners kommt nicht in den Kontext (mit und ohne Signal)", async () => {
+    // Wer den Schlüssel ins falsche Feld einfügt, hat im richtigen keinen — gerade dann laufen die
+    // Ordner jetzt in den Kontext (P129). Ein Wert mit «dpk_» fällt darum weg.
+    const env = {
+      CLAUDE_PLUGIN_OPTION_KDRIVE_WURZEL: SCHLUESSEL,
+      CLAUDE_PLUGIN_OPTION_ARBEITSORDNER: `C:\\Ordner\\${SCHLUESSEL.slice(0, 20)}`,
+    }
+    const ohne = await lauf("beginn", { ohneSchluessel: true, env })
+    verhalten = { status: 200, koerper: { ok: true, meine_offenen_aufgaben: [] } }
+    const mit = await lauf("beginn", { env })
+    // Ein Steuerzeichen mitten im Präfix ändert daran nichts (geprüft nach dem Entfernen, Nachprüfung H3).
+    const soh = String.fromCharCode(1)
+    const verdeckt = await lauf("beginn", {
+      ohneSchluessel: true,
+      env: {
+        CLAUDE_PLUGIN_OPTION_KDRIVE_WURZEL: `d${soh}pk_${SCHLUESSEL.slice(4)}`,
+        CLAUDE_PLUGIN_OPTION_ARBEITSORDNER: `C:\\x\\dp${soh}k_${SCHLUESSEL.slice(4, 24)}`,
+      },
+    })
+    for (const [wie, r] of [
+      ["ohne Signal", ohne],
+      ["mit Signal", mit],
+      ["Steuerzeichen im Präfix", verdeckt],
+    ]) {
+      assert.equal(r.code, 0, wie)
+      keinGeheimnis(r)
+      assert.ok(!r.aus.includes("dpk_"), `${wie}: kein Teil des Schlüssels in der Ausgabe`)
+      const k = kontextVon(r)
+      assert.ok(k.includes(`${KDRIVE_ZEILE}${FEHLT}`), `${wie}: ${k}`)
+      assert.ok(k.includes(`${ARBEIT_ZEILE}${FEHLT}`), `${wie}: ${k}`)
+    }
+  })
+
+  test("Prompt, Antwort und Ende ohne Signal: weiter keine Ausgabe, auch mit Ordnern", async () => {
+    for (const art of ["prompt", "antwort", "ende"]) {
+      const ohne = await lauf(art, { ohneSchluessel: true, env: MIT_ORDNERN })
+      assert.equal(ohne.code, 0, art)
+      assert.equal(ohne.aus, "", `${art} ohne Schlüssel`)
+      verhalten = { status: 401, koerper: { error: "x" } }
+      const ungueltig = await lauf(art, { env: MIT_ORDNERN })
+      assert.equal(ungueltig.code, 0, art)
+      assert.equal(ungueltig.aus, "", `${art} mit 401`)
+    }
+    assert.ok(!JSON.stringify(anfragen).includes("ORDNER"), "kein Ordner an process")
+  })
+
+  test("Kennung fehlt, Schlüssel gesetzt: tr und sed für die Ordner sehen weder Schlüssel noch Einstellungen", async () => {
+    // Fehlt die Kennung, endet das Skript, bevor es den Schlüssel prüft und leert — die Ordner
+    // laufen dann mit dem Schlüssel in einer Variablen der Shell durch tr und sed. Gefälschte tr und
+    // sed halten ihre Umgebung fest und rufen dann die echten.
+    const ordner = mkdtempSync(join(temp, "falsch-tr-"))
+    const protokoll = join(ordner, "protokoll").replace(/\\/g, "/")
+    for (const werkzeug of ["tr", "sed"]) {
+      writeFileSync(
+        join(ordner, werkzeug),
+        ["#!/bin/sh", `env >> '${protokoll}.env'`, `exec /usr/bin/${werkzeug} "$@"`, ""].join("\n"),
+        { mode: 0o755 },
+      )
+    }
+    const skript = kopie(adresse, "signal-tr-sed.sh", [
+      [PATH_ZEILE, `PATH='${posixPfad(ordner)}':/usr/bin:/bin:/ucrt64/bin:/mingw64/bin:/clangarm64/bin\${PATH:+:$PATH}`],
+    ])
+    for (const shellopts of [undefined, "allexport"]) {
+      const wie = shellopts ?? "ohne SHELLOPTS"
+      rmSync(`${protokoll}.env`, { force: true })
+      const r = await lauf("beginn", {
+        skript,
+        eingang: "{}",
+        env: { ...MIT_ORDNERN, ...(shellopts ? { SHELLOPTS: shellopts } : {}) },
+      })
+      assert.equal(r.code, 0, wie)
+      keinGeheimnis(r)
+      assert.ok(existsSync(`${protokoll}.env`), `${wie}: tr und sed liefen`)
+      const umgebung = readFileSync(`${protokoll}.env`, "utf8")
+      assert.ok(!umgebung.includes(SCHLUESSEL) && !umgebung.includes("dpk_"), `${wie}: kein Schlüssel`)
+      assert.ok(!umgebung.includes("CLAUDE_PLUGIN_OPTION_"), `${wie}: keine Einstellung`)
+      assert.ok(!umgebung.includes("ORDNER"), `${wie}: die Ordner nur über stdin`)
+      assert.ok(kontextVon(r).endsWith(`${ARBEIT_ZEILE}${ARBEIT}`), `${wie}: der Arbeitsordner kam an`)
+    }
+    assert.equal(anfragen.length, 0)
+  })
+})
+
 // ── Mit gefälschtem curl: was curl zu sehen bekommt ──────────────────────────
 
 describe("curl-Aufruf", () => {
@@ -607,6 +793,25 @@ describe("Umgebung", () => {
     }
   })
 
+  test("Funktionen «[» und «test» von aussen bekommen den Schlüssel nicht (Security-Durchsicht P129)", async () => {
+    verhalten = { status: 200, koerper: { ok: true, meine_offenen_aufgaben: [] } }
+    const env = {
+      "BASH_FUNC_[%%": '() { printf "ABGEGRIFFEN-KLAMMER %s\\n" "$schluessel" >&2; builtin [ "$@"; }',
+      "BASH_FUNC_test%%": '() { printf "ABGEGRIFFEN-TEST %s\\n" "$schluessel" >&2; builtin test "$@"; }',
+    }
+    // Auch mit der sh ohne Starter (Git\usr\bin\sh.exe, POSIX-Modus) — so ruft Claude Code /bin/sh auf.
+    for (const sh of [...new Set([SH, SH_OHNE_STARTER])]) {
+      for (const art of ["beginn", "prompt"]) {
+        anfragen = []
+        const r = await lauf(art, { env, sh })
+        assert.equal(r.code, 0, `${art} mit ${sh}`)
+        keinGeheimnis(r)
+        assert.ok(!r.err.includes("ABGEGRIFFEN"), `${art} mit ${sh}: keine Funktion von aussen lief`)
+        assert.equal(anfragen.length, 1, `${art} mit ${sh}: das Signal kam an`)
+      }
+    }
+  })
+
   test("errexit von aussen ändert den Exit nicht", async () => {
     const env = { SHELLOPTS: "errexit" }
     const r1 = await lauf("beginn", { env, ohneSchluessel: true })
@@ -632,7 +837,7 @@ describe("Umgebung", () => {
       CLAUDE_PLUGIN_OPTION_KDRIVE_WURZEL: "/Users/w/kDrive",
       CLAUDE_PLUGIN_OPTION_ARBEITSORDNER: "/Users/w/Arbeit",
     }
-    for (const n of ["schluessel", "kdrive", "arbeit", "eingang", "sid", "antwort", "kontext"]) env[n] = "VORBELEGT"
+    for (const n of ["schluessel", "kdrive", "arbeit", "eingang", "sid", "antwort", "kontext", "ablage"]) env[n] = "VORBELEGT"
     const r = await lauf("beginn", { skript, env })
     assert.equal(r.code, 0)
     keinGeheimnis(r)
@@ -641,7 +846,7 @@ describe("Umgebung", () => {
     assert.ok(!umgebung.includes(SID), "kein Rest des Eingangs")
     assert.ok(!umgebung.includes("/Users/w/Arbeit"), "der Arbeitsordner nicht")
     assert.ok(!umgebung.includes("/Users/w/kDrive"), "der kDrive-Ordner nicht")
-    assert.ok(!/^(schluessel|kdrive|arbeit|eingang|sid|antwort|kontext)=/m.test(umgebung), "keine Variable des Skripts")
+    assert.ok(!/^(schluessel|kdrive|arbeit|eingang|sid|antwort|kontext|ablage)=/m.test(umgebung), "keine Variable des Skripts")
     assert.ok(kontextVon(r).includes("/Users/w/Arbeit"), "der Arbeitsordner kam trotzdem an")
   })
 
@@ -721,7 +926,7 @@ describe("Wächter", () => {
     const zeilen = QUELLE.split("\n").map((z) => z.trim())
     const code = zeilen.filter((z) => z && !z.startsWith("#"))
     assert.equal(code[0], "set +aeuvx", "erste Anweisung: keine Shell-Optionen von aussen")
-    assert.equal(code[1], "unset -f printf command curl head cat tail sed tr grep awk 2>/dev/null")
+    assert.equal(code[1], "unset -f printf command curl head cat tail sed tr grep awk '[' test 2>/dev/null")
     assert.equal(code[2], PATH_ZEILE, "Ordner des Systems zuerst")
     assert.equal(code[3], "unset SSLKEYLOGFILE CURL_CA_BUNDLE SSL_CERT_FILE SSL_CERT_DIR")
     // P127: keine Vorbelegung der eigenen Variablen — jede Zuweisung im Skript steht in dieser Liste.
@@ -842,6 +1047,21 @@ describe("Wächter", () => {
     // P127 (§6.4): Dateien zu einer Aufgabe gehören in ihre Ablage; eine fehlende schlägt Claude vor
     // und setzt sie erst nach dem Ja der Person.
     for (const w of ["Ablage", "`ablage_setzen`", "`arbeitsordner`", "`kdrive`", "Ja"]) {
+      assert.ok(s.includes(w), `Skill nennt ${w}`)
+    }
+    // P129 (Punkt 7 der Anleitung): Hat jemand anderes die Ablage gesetzt, fragt Claude vorher.
+    for (const w of ["`von_mir: false`", "`gesetzt_von`", "frag die Person vorher"]) {
+      assert.ok(s.includes(w), `Skill nennt ${w}`)
+    }
+    // P129, Entscheid Martin («Ja, ausserhalb Ablage»): ein Pfad nur im Text einer Aufgabe, der aus der
+    // Ablage hinausführt (oder ohne Ablage), gilt wie eine fremd gesetzte; innerhalb der Ablage nicht.
+    for (const w of [
+      "nur im Text einer Aufgabe",
+      "aus der Ablage hinausführt",
+      "ohne Ablage",
+      "Innerhalb ist nur",
+      "allgemeiner Auftrag",
+    ]) {
       assert.ok(s.includes(w), `Skill nennt ${w}`)
     }
   })

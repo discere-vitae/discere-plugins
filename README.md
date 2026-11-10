@@ -5,15 +5,15 @@ Plugins für [Claude Code](https://code.claude.com) aus der discere-Suite. Das R
 
 ## Plugin «process»
 
-Für die Arbeit mit [discere process](https://process.discere.ch) in Claude Code (Tasks P120 und P127, Definition
-P113 §6.4).
+Für die Arbeit mit [discere process](https://process.discere.ch) in Claude Code (Tasks P120, P127 und P129,
+Definition P113 §6.4).
 
 - **Vier Hooks** melden Beginn, Prompt, Antwort und Ende jeder Sitzung an process. Gesendet werden nur die Art des
   Signals und die Kennung der Sitzung; den Zeitpunkt setzt process bei der Ankunft. Nie gesendet werden Prompts,
   Antworten, Ordner oder Dateinamen. Aus den Zeitpunkten rechnet process die Menschenzeit für den Tagesabschluss.
 - **Beim Beginn** bekommt Claude die Kennung der Sitzung (für `arbeit_beginnen`), die eigenen offenen Aufgaben (nur
   Nummer und Status) und die Ordner der Ablage dieses Rechners: den kDrive-Ordner und den Arbeitsordner, je wenn
-  eingestellt (siehe «Ordner der Ablage»).
+  eingestellt (siehe «Ordner der Ablage»). Die Ordner auch dann, wenn kein Signal ankommt.
 - **Der Skill «Arbeiten mit process»** sagt Claude, wann `kontext` und wann `arbeit_beginnen`.
 - **Die Werkzeuge** (`kontext`, `arbeit_beginnen` …) kommen nicht aus dem Plugin, sondern vom Connector «discere
   process» in claude.ai. Er erscheint in Claude Code von selbst.
@@ -56,10 +56,13 @@ Wurzel, den Pfad ab ihr und einen Link, nie den Ordner auf dem Rechner. Den nenn
 | `arbeitsordner` | Arbeitsordner | ein lokaler Ordner, etwa `C:\AI` |
 
 - Beide bleiben auf dem Rechner. Das Skript gibt sie nur Claude in den Zusatzkontext, ohne Steuerzeichen; ein Ordner
-  über 500 Byte fällt ganz weg. An process gehen sie nie.
+  über 500 Byte fällt ganz weg, ebenso ein Wert mit `dpk_` (ein Signal-Schlüssel im falschen Feld). An process gehen
+  sie nie.
 - Jeder Ordner unter dem Arbeitsordner kann eine Ablage werden — und eine Ablage setzen in process alle, die die
   Aufgabe ändern dürfen. Den Arbeitsordner also bewusst wählen. Bevor Claude in einer Ablage zum ersten Mal liest
-  oder schreibt, nennt es den aufgelösten Ordner. Ordner mit `.` vorne (`.git`, `.claude`) und Kurznamen von Windows (`GIT~1`)
+  oder schreibt, nennt es den aufgelösten Ordner. Hat die Ablage einer Aufgabe jemand anderes gesetzt (process sagt
+  es Claude, P129), fragt es vorher nach — ebenso bei einem Pfad, der nur im Text der Aufgabe steht und aus der Ablage
+  hinausführt. Ordner mit `.` vorne (`.git`, `.claude`) und Kurznamen von Windows (`GIT~1`)
   lehnt process als Ablage ab.
 - Ist ein Ordner nicht eingestellt, sagt Claude der Person, dass die Dateien dieser Wurzel auf einem anderen Rechner
   liegen.
@@ -71,7 +74,8 @@ Eine Sitzung bleibt nie hängen. Die Hooks enden immer ohne Fehler.
 
 - **Prompt und Antwort** laufen im Hintergrund; der Prompt wartet nie.
 - **Beginn:** höchstens 4 s. Kommt er nicht an, steht eine Zeile da, etwa «discere process: nicht erreichbar …»,
-  und Claude arbeitet wie ohne Plugin.
+  und Claude arbeitet wie ohne Plugin. Die Ordner der Ablage bekommt Claude trotzdem (ab 1.1.1): Sie brauchen weder
+  den Schlüssel noch process.
 - **Ende:** höchstens 1 s. Claude Code gibt allen Hooks am Ende zusammen 1,5 s.
 - **Nichts wird nachgesendet:** process nimmt die Ankunftszeit, und eine Zeit vom Rechner liesse sich fälschen.
   Fehlende Zeit trägst du im Tagesabschluss nach. Kommt kein Ende an, schliesst process die Sitzung nach 30 Minuten
@@ -109,6 +113,13 @@ discere, oder im Terminal mit `claude plugin update process@discere`. Das automa
 Sammlung aus (Vorgabe von Claude Code): Ein Update bringt Code, der in jeder Sitzung läuft — vorher ansehen, was
 sich geändert hat.
 
+- **1.1.1** (P129): Die Ordner der Ablage stehen auch dann im Zusatzkontext, wenn kein Signal ankommt (Schlüssel
+  fehlt oder ist ungültig, curl fehlt, process ist nicht erreichbar oder antwortet mit einem Fehler). Bisher hiess es
+  dann, sie seien nicht eingestellt. Der Skill: Hat jemand anderes die Ablage einer Aufgabe gesetzt, fragt Claude vor
+  dem ersten Lesen oder Schreiben dort nach; ebenso bei einem Pfad, der nur im Text der Aufgabe steht und aus der Ablage
+  hinausführt (oder wenn sie keine hat). Härtungen: Ein Wert mit `dpk_` in einem Ordner-Feld fällt weg; jeder Test
+  im Skript läuft über `command [`, sodass eine Funktion `[` aus der Umgebung nichts bekommt (bash 3.2 unter macOS
+  entfernt sie nicht mit `unset -f`).
 - **1.1.0** (P127): die Einstellung «Arbeitsordner (freiwillig)» und im Zusatzkontext beide Ordner der Ablage. Nach
   dem Update den Arbeitsordner mit `/plugin configure process@discere` eintragen (oder leer lassen).
 - **1.0.0** (P120): Hooks, Signal-Schlüssel, kDrive-Ordner, Skill.

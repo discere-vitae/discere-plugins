@@ -12,7 +12,8 @@
 #   die eigenen offenen Aufgaben (nur Nummer und Status, beides geprüft) und die Ordner der Ablage
 #   dieses Rechners (P127: kDrive-Ordner und Arbeitsordner, je eine Einstellung des Plugins). Die
 #   Ordner bleiben auf dem Rechner, sie gehen nie an process. Kommt der Beginn nicht an, sieht die
-#   Person eine Zeile, und Claude arbeitet wie ohne Plugin.
+#   Person eine Zeile, und Claude arbeitet wie ohne Plugin — die Ordner der Ablage bekommt es auch
+#   dann (P129): Sie sind Einstellungen dieses Rechners und brauchen weder Schlüssel noch process.
 #
 # Was es nie tut:
 # - Mit einem Fehler enden: immer Exit 0. Ein Exit 2 hielte den Prompt oder das Ende auf.
@@ -32,8 +33,11 @@
 #   stderr, allexport legte jede Variable (Schlüssel, Anfang des Prompts) in die Umgebung der
 #   Hilfsprozesse, errexit brächte einen anderen Exit als 0;
 # - keine Funktionen von aussen (bash importiert exportierte Funktionen auch als sh): eine Funktion
-#   «printf» oder «curl» bekäme sonst den Schlüssel. set, unset und exit sind spezielle Builtins,
-#   die keine Funktion ersetzen kann;
+#   «printf», «curl» oder «[» bekäme sonst den Schlüssel. set, unset und exit sind spezielle
+#   Builtins, die im POSIX-Modus (so ruft Claude Code /bin/sh auf) keine Funktion ersetzen kann.
+#   «[» ist ein gewöhnliches Builtin, dem eine Funktion vorgeht, und bash 3.2 (macOS) entfernt eine
+#   importierte Funktion «[» nicht mit unset -f (CI P129): Darum steht vor jedem «[» im Skript
+#   «command», das die Funktionen überspringt (POSIX) — «command» selbst entfernt die Zeile darunter;
 # - die Werkzeuge zuerst aus den Ordnern des Systems: ein curl, head oder cat in ~/bin oder einem
 #   relativen Ordner bekäme sonst Schlüssel oder Prompt (Git für Windows legt curl je nach Fassung in
 #   /ucrt64, /mingw64 oder auf ARM64 in /clangarm64);
@@ -42,10 +46,10 @@
 #   der Umgebung, behielte sie nach POSIX ihr Export-Kennzeichen, und Schlüssel, Eingang oder Ordner
 #   landeten in der Umgebung der Hilfsprozesse.
 set +aeuvx
-unset -f printf command curl head cat tail sed tr grep awk 2>/dev/null
+unset -f printf command curl head cat tail sed tr grep awk '[' test 2>/dev/null
 PATH=/usr/bin:/bin:/ucrt64/bin:/mingw64/bin:/clangarm64/bin${PATH:+:$PATH}
 unset SSLKEYLOGFILE CURL_CA_BUNDLE SSL_CERT_FILE SSL_CERT_DIR
-unset ADRESSE VERSION art schluessel kdrive arbeit eingang wert sid rest antwort liste code frist fehlt kontext
+unset ADRESSE VERSION art schluessel kdrive arbeit eingang wert sid rest antwort liste code frist fehlt kontext ablage
 LC_ALL=C
 # Git Bash (Windows) wandelt sonst Argumente, die wie Pfade aussehen, für curl.exe um.
 MSYS_NO_PATHCONV=1
@@ -53,7 +57,7 @@ MSYS2_ARG_CONV_EXCL='*'
 export PATH LC_ALL MSYS_NO_PATHCONV MSYS2_ARG_CONV_EXCL
 
 ADRESSE='https://process.discere.ch'
-VERSION='1.1.0'
+VERSION='1.1.1'
 
 art=${1-}
 case $art in
@@ -68,13 +72,43 @@ kdrive=${CLAUDE_PLUGIN_OPTION_KDRIVE_WURZEL-}
 arbeit=${CLAUDE_PLUGIN_OPTION_ARBEITSORDNER-}
 unset CLAUDE_PLUGIN_OPTION_SIGNAL_SCHLUESSEL CLAUDE_PLUGIN_OPTION_KDRIVE_WURZEL CLAUDE_PLUGIN_OPTION_ARBEITSORDNER
 
+# Die Zeilen zur Ablage für den Zusatzkontext beim Beginn (P127). Die Ordner kommen aus den
+# Einstellungen des Plugins (vom Menschen gesetzt), nie von process: je ohne Steuerzeichen, mit
+# maskiertem \ und " für den JSON-Text, höchstens 500 Byte (sonst weg). Ein leerer Ordner kostet
+# keinen Hilfsprozess. Ein Wert mit «dpk_» (geprüft nach dem Entfernen der Steuerzeichen) ist eher
+# ein Signal-Schlüssel im falschen Feld als ein Ordner (Security-Durchsicht P129): Er fällt weg,
+# statt in den Kontext und den Verlauf zu kommen — gerade ohne Signal, also wenn der Schlüssel im
+# richtigen Feld fehlt.
+ordner() {
+  if command [ -n "$kdrive" ]; then
+    command [ ${#kdrive} -le 2000 ] || kdrive=
+    kdrive=$(printf '%s' "$kdrive" | tr -d '\000-\037\177')
+    case $kdrive in *dpk_*) kdrive= ;; esac
+    command [ ${#kdrive} -le 500 ] || kdrive=
+    kdrive=$(printf '%s' "$kdrive" | sed -e 's/\\/\\\\/g' -e 's/"/\\"/g')
+  fi
+  if command [ -n "$arbeit" ]; then
+    command [ ${#arbeit} -le 2000 ] || arbeit=
+    arbeit=$(printf '%s' "$arbeit" | tr -d '\000-\037\177')
+    case $arbeit in *dpk_*) arbeit= ;; esac
+    command [ ${#arbeit} -le 500 ] || arbeit=
+    arbeit=$(printf '%s' "$arbeit" | sed -e 's/\\/\\\\/g' -e 's/"/\\"/g')
+  fi
+  fehlt='hier nicht eingestellt – Dateien mit dieser Wurzel liegen auf einem anderen Rechner; sag das der Person'
+  ablage="\\n- Ablage einer Aufgabe oder eines Projekts («aufgabe_lesen», «arbeit_beginnen», «projekt_lesen»): Ihr Pfad gilt ab dem Ordner ihrer «wurzel» auf diesem Rechner; bleib darunter."
+  ablage="$ablage\\n  - «kdrive», der kDrive-Ordner: ${kdrive:-$fehlt}"
+  ablage="$ablage\\n  - «arbeitsordner», der Arbeitsordner: ${arbeit:-$fehlt}"
+}
+
 # Beim Beginn ohne Signal: eine Zeile für die Person (systemMessage) und für Claude der Hinweis,
 # ohne «client_ref» zu arbeiten — eine Sitzung mit «client_ref», deren Signale fehlen, zählte
 # die Werkzeug-Aufrufe nicht (process rechnet sie nur Sitzungen ohne Kennung an). Beide Texte
-# sind fest; hier kommt nichts von aussen hinein.
+# sind fest. P129: Dahinter stehen die Zeilen zur Ablage wie mit Signal (`ordner`) — sonst hiesse
+# es, die Ordner seien nicht eingestellt, und Claude meldete der Person einen anderen Rechner.
 ohne() {
-  if [ "$art" = beginn ]; then
-    printf '{"systemMessage":"discere process: %s","hookSpecificOutput":{"hookEventName":"SessionStart","additionalContext":"discere process (Plugin): Die Signale dieser Sitzung kommen nicht an (%s). Arbeite mit dem Connector «discere process» wie ohne Plugin: «arbeit_beginnen» und «arbeit_beenden» ohne «client_ref»."}}\n' "$1" "$2"
+  if command [ "$art" = beginn ]; then
+    ordner
+    printf '{"systemMessage":"discere process: %s","hookSpecificOutput":{"hookEventName":"SessionStart","additionalContext":"discere process (Plugin): Die Signale dieser Sitzung kommen nicht an (%s). Arbeite mit dem Connector «discere process» wie ohne Plugin: «arbeit_beginnen» und «arbeit_beenden» ohne «client_ref».%s"}}\n' "$1" "$2" "$ablage"
   fi
   exit 0
 }
@@ -102,13 +136,13 @@ wert=
 case $sid in
 '' | *[!A-Za-z0-9_-]*) sid= ;;
 esac
-[ ${#sid} -le 200 ] || sid=
-[ -n "$sid" ] || ohne 'Kennung der Sitzung fehlt – diese Sitzung zählt nicht.' 'Kennung der Sitzung fehlt'
+command [ ${#sid} -le 200 ] || sid=
+command [ -n "$sid" ] || ohne 'Kennung der Sitzung fehlt – diese Sitzung zählt nicht.' 'Kennung der Sitzung fehlt'
 
 # Der Signal-Schlüssel: Leerraum vom Einfügen weg, dann nur in der genauen Form «dpk_» und 43
 # Zeichen base64url. Alles andere gilt als fehlend — so kommt auch nichts in die Anweisungen an
 # curl, was dort nicht hingehört.
-[ ${#schluessel} -le 200 ] || schluessel=
+command [ ${#schluessel} -le 200 ] || schluessel=
 while :; do
   case $schluessel in
   [[:space:]]*) schluessel=${schluessel#?} ;;
@@ -124,9 +158,9 @@ esac
 case $rest in
 *[!A-Za-z0-9_-]*) rest= ;;
 esac
-[ ${#rest} -eq 43 ] || rest=
+command [ ${#rest} -eq 43 ] || rest=
 rest=${rest:+ok}
-if [ -z "$rest" ]; then
+if command [ -z "$rest" ]; then
   schluessel=
   ohne 'Signal-Schlüssel fehlt – diese Sitzung zählt nicht. Einrichten unter /plugin → process.' 'Signal-Schlüssel fehlt'
 fi
@@ -149,7 +183,7 @@ antwort=$(printf 'header = "Authorization: Bearer %s"\n' "$schluessel" |
     -o - -w '\n%{http_code}' "$ADRESSE/api/ki/signal" 2>/dev/null)
 schluessel=
 
-[ "$art" = beginn ] || exit 0
+command [ "$art" = beginn ] || exit 0
 
 code=$(printf '%s\n' "$antwort" | tail -n 1)
 case $code in
@@ -176,29 +210,12 @@ liste=$(printf '%s\n' "$antwort" | sed '$d' | tr -d '\r\n' |
   awk 'NR > 1 { printf ", " } { printf "%s", $0 }')
 antwort=
 
-# Die Ordner der Ablage kommen aus den Einstellungen des Plugins (vom Menschen gesetzt): je ohne
-# Steuerzeichen, mit maskiertem \ und " für den JSON-Text, höchstens 500 Byte (sonst weg). Ein
-# leerer Ordner kostet keinen Hilfsprozess.
-if [ -n "$kdrive" ]; then
-  [ ${#kdrive} -le 2000 ] || kdrive=
-  kdrive=$(printf '%s' "$kdrive" | tr -d '\000-\037\177')
-  [ ${#kdrive} -le 500 ] || kdrive=
-  kdrive=$(printf '%s' "$kdrive" | sed -e 's/\\/\\\\/g' -e 's/"/\\"/g')
-fi
-if [ -n "$arbeit" ]; then
-  [ ${#arbeit} -le 2000 ] || arbeit=
-  arbeit=$(printf '%s' "$arbeit" | tr -d '\000-\037\177')
-  [ ${#arbeit} -le 500 ] || arbeit=
-  arbeit=$(printf '%s' "$arbeit" | sed -e 's/\\/\\\\/g' -e 's/"/\\"/g')
-fi
-fehlt='hier nicht eingestellt – Dateien mit dieser Wurzel liegen auf einem anderen Rechner; sag das der Person'
+ordner
 
 kontext="discere process (Plugin): Diese Claude-Code-Sitzung meldet ihre Zeitpunkte an process (Beginn, Prompt, Antwort, Ende; keine Inhalte)."
 kontext="$kontext\\n- Kennung dieser Sitzung: $sid. Gib sie bei «arbeit_beginnen» und «arbeit_beenden» (Connector «discere process») als «client_ref» mit."
 kontext="$kontext\\n- Meine offenen Aufgaben (Nummer und Status): ${liste:-keine}. Inhalte liest du mit «aufgabe_lesen»."
-kontext="$kontext\\n- Ablage einer Aufgabe oder eines Projekts («aufgabe_lesen», «arbeit_beginnen», «projekt_lesen»): Ihr Pfad gilt ab dem Ordner ihrer «wurzel» auf diesem Rechner; bleib darunter."
-kontext="$kontext\\n  - «kdrive», der kDrive-Ordner: ${kdrive:-$fehlt}"
-kontext="$kontext\\n  - «arbeitsordner», der Arbeitsordner: ${arbeit:-$fehlt}"
+kontext="$kontext$ablage"
 kontext="$kontext\\n- Arbeit an einer Aufgabe oder einem Projekt rahmst du mit «arbeit_beginnen» und «arbeit_beenden» ein (Skill «Arbeiten mit process»)."
 
 printf '{"hookSpecificOutput":{"hookEventName":"SessionStart","additionalContext":"%s"}}\n' "$kontext"

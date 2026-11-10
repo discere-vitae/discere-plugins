@@ -927,6 +927,13 @@ describe("Wächter", () => {
     const code = zeilen.filter((z) => z && !z.startsWith("#"))
     assert.equal(code[0], "set +aeuvx", "erste Anweisung: keine Shell-Optionen von aussen")
     assert.equal(code[1], "unset -f printf command curl head cat tail sed tr grep awk '[' test 2>/dev/null")
+    // P129 (CI macOS): bash 3.2 entfernt eine importierte Funktion «[» nicht — jeder Test im Skript
+    // läuft darum über «command [», das Funktionen überspringt; kein «[» und kein «test» ohne.
+    const ohneCommand = code.filter((z) =>
+      /(^|[;&|(){!]\s*|\$\(\s*|\b(if|elif|while|until|then|do|else)\s+)(\[|test)\s/.test(z),
+    )
+    assert.deepEqual(ohneCommand, [], "jedes «[» mit «command» davor")
+    assert.ok(code.filter((z) => z.includes("command [ ")).length >= 10, "die Tests laufen über «command [»")
     assert.equal(code[2], PATH_ZEILE, "Ordner des Systems zuerst")
     assert.equal(code[3], "unset SSLKEYLOGFILE CURL_CA_BUNDLE SSL_CERT_FILE SSL_CERT_DIR")
     // P127: keine Vorbelegung der eigenen Variablen — jede Zuweisung im Skript steht in dieser Liste.

@@ -33,9 +33,11 @@
 #   stderr, allexport legte jede Variable (Schlüssel, Anfang des Prompts) in die Umgebung der
 #   Hilfsprozesse, errexit brächte einen anderen Exit als 0;
 # - keine Funktionen von aussen (bash importiert exportierte Funktionen auch als sh): eine Funktion
-#   «printf», «curl» oder «[» bekäme sonst den Schlüssel (Security-Durchsicht P129: «[» und «test»
-#   sind gewöhnliche Builtins, eine Funktion geht ihnen vor). set, unset und exit sind spezielle
-#   Builtins, die im POSIX-Modus (so ruft Claude Code /bin/sh auf) keine Funktion ersetzen kann;
+#   «printf», «curl» oder «[» bekäme sonst den Schlüssel. set, unset und exit sind spezielle
+#   Builtins, die im POSIX-Modus (so ruft Claude Code /bin/sh auf) keine Funktion ersetzen kann.
+#   «[» ist ein gewöhnliches Builtin, dem eine Funktion vorgeht, und bash 3.2 (macOS) entfernt eine
+#   importierte Funktion «[» nicht mit unset -f (CI P129): Darum steht vor jedem «[» im Skript
+#   «command», das die Funktionen überspringt (POSIX) — «command» selbst entfernt die Zeile darunter;
 # - die Werkzeuge zuerst aus den Ordnern des Systems: ein curl, head oder cat in ~/bin oder einem
 #   relativen Ordner bekäme sonst Schlüssel oder Prompt (Git für Windows legt curl je nach Fassung in
 #   /ucrt64, /mingw64 oder auf ARM64 in /clangarm64);
@@ -78,18 +80,18 @@ unset CLAUDE_PLUGIN_OPTION_SIGNAL_SCHLUESSEL CLAUDE_PLUGIN_OPTION_KDRIVE_WURZEL 
 # statt in den Kontext und den Verlauf zu kommen — gerade ohne Signal, also wenn der Schlüssel im
 # richtigen Feld fehlt.
 ordner() {
-  if [ -n "$kdrive" ]; then
-    [ ${#kdrive} -le 2000 ] || kdrive=
+  if command [ -n "$kdrive" ]; then
+    command [ ${#kdrive} -le 2000 ] || kdrive=
     kdrive=$(printf '%s' "$kdrive" | tr -d '\000-\037\177')
     case $kdrive in *dpk_*) kdrive= ;; esac
-    [ ${#kdrive} -le 500 ] || kdrive=
+    command [ ${#kdrive} -le 500 ] || kdrive=
     kdrive=$(printf '%s' "$kdrive" | sed -e 's/\\/\\\\/g' -e 's/"/\\"/g')
   fi
-  if [ -n "$arbeit" ]; then
-    [ ${#arbeit} -le 2000 ] || arbeit=
+  if command [ -n "$arbeit" ]; then
+    command [ ${#arbeit} -le 2000 ] || arbeit=
     arbeit=$(printf '%s' "$arbeit" | tr -d '\000-\037\177')
     case $arbeit in *dpk_*) arbeit= ;; esac
-    [ ${#arbeit} -le 500 ] || arbeit=
+    command [ ${#arbeit} -le 500 ] || arbeit=
     arbeit=$(printf '%s' "$arbeit" | sed -e 's/\\/\\\\/g' -e 's/"/\\"/g')
   fi
   fehlt='hier nicht eingestellt – Dateien mit dieser Wurzel liegen auf einem anderen Rechner; sag das der Person'
@@ -104,7 +106,7 @@ ordner() {
 # sind fest. P129: Dahinter stehen die Zeilen zur Ablage wie mit Signal (`ordner`) — sonst hiesse
 # es, die Ordner seien nicht eingestellt, und Claude meldete der Person einen anderen Rechner.
 ohne() {
-  if [ "$art" = beginn ]; then
+  if command [ "$art" = beginn ]; then
     ordner
     printf '{"systemMessage":"discere process: %s","hookSpecificOutput":{"hookEventName":"SessionStart","additionalContext":"discere process (Plugin): Die Signale dieser Sitzung kommen nicht an (%s). Arbeite mit dem Connector «discere process» wie ohne Plugin: «arbeit_beginnen» und «arbeit_beenden» ohne «client_ref».%s"}}\n' "$1" "$2" "$ablage"
   fi
@@ -134,13 +136,13 @@ wert=
 case $sid in
 '' | *[!A-Za-z0-9_-]*) sid= ;;
 esac
-[ ${#sid} -le 200 ] || sid=
-[ -n "$sid" ] || ohne 'Kennung der Sitzung fehlt – diese Sitzung zählt nicht.' 'Kennung der Sitzung fehlt'
+command [ ${#sid} -le 200 ] || sid=
+command [ -n "$sid" ] || ohne 'Kennung der Sitzung fehlt – diese Sitzung zählt nicht.' 'Kennung der Sitzung fehlt'
 
 # Der Signal-Schlüssel: Leerraum vom Einfügen weg, dann nur in der genauen Form «dpk_» und 43
 # Zeichen base64url. Alles andere gilt als fehlend — so kommt auch nichts in die Anweisungen an
 # curl, was dort nicht hingehört.
-[ ${#schluessel} -le 200 ] || schluessel=
+command [ ${#schluessel} -le 200 ] || schluessel=
 while :; do
   case $schluessel in
   [[:space:]]*) schluessel=${schluessel#?} ;;
@@ -156,9 +158,9 @@ esac
 case $rest in
 *[!A-Za-z0-9_-]*) rest= ;;
 esac
-[ ${#rest} -eq 43 ] || rest=
+command [ ${#rest} -eq 43 ] || rest=
 rest=${rest:+ok}
-if [ -z "$rest" ]; then
+if command [ -z "$rest" ]; then
   schluessel=
   ohne 'Signal-Schlüssel fehlt – diese Sitzung zählt nicht. Einrichten unter /plugin → process.' 'Signal-Schlüssel fehlt'
 fi
@@ -181,7 +183,7 @@ antwort=$(printf 'header = "Authorization: Bearer %s"\n' "$schluessel" |
     -o - -w '\n%{http_code}' "$ADRESSE/api/ki/signal" 2>/dev/null)
 schluessel=
 
-[ "$art" = beginn ] || exit 0
+command [ "$art" = beginn ] || exit 0
 
 code=$(printf '%s\n' "$antwort" | tail -n 1)
 case $code in

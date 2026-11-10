@@ -117,8 +117,9 @@ sich geändert hat.
   fehlt oder ist ungültig, curl fehlt, process ist nicht erreichbar oder antwortet mit einem Fehler). Bisher hiess es
   dann, sie seien nicht eingestellt. Der Skill: Hat jemand anderes die Ablage einer Aufgabe gesetzt, fragt Claude vor
   dem ersten Lesen oder Schreiben dort nach; ebenso bei einem Pfad, der nur im Text der Aufgabe steht und aus der Ablage
-  hinausführt (oder wenn sie keine hat). Härtungen: Ein Wert mit `dpk_` in einem Ordner-Feld fällt weg; Funktionen
-  `[` und `test` aus der Umgebung entfernt das Skript wie die übrigen.
+  hinausführt (oder wenn sie keine hat). Härtungen: Ein Wert mit `dpk_` in einem Ordner-Feld fällt weg; jeder Test
+  im Skript läuft über `command [`, sodass eine Funktion `[` aus der Umgebung nichts bekommt (bash 3.2 unter macOS
+  entfernt sie nicht mit `unset -f`).
 - **1.1.0** (P127): die Einstellung «Arbeitsordner (freiwillig)» und im Zusatzkontext beide Ordner der Ablage. Nach
   dem Update den Arbeitsordner mit `/plugin configure process@discere` eintragen (oder leer lassen).
 - **1.0.0** (P120): Hooks, Signal-Schlüssel, kDrive-Ordner, Skill.

@@ -1,7 +1,7 @@
 {
   "name": "process",
-  "version": "1.1.1",
-  "description": "Arbeiten mit discere process in Claude Code: Die Hooks melden Beginn, Prompt, Antwort und Ende jeder Sitzung an process (nur Zeitpunkte, nie Inhalte). Der Skill sagt Claude, wann «kontext» und wann «arbeit_beginnen».",
+  "version": "1.2.0",
+  "description": "Arbeiten mit discere process in Claude Code: Die Hooks melden Beginn, Prompt, Antwort und Ende jeder Sitzung an process (nur Zeitpunkte, nie Inhalte). Der Skill sagt Claude, wann «kontext», wann «arbeit_beginnen» und wann es etwas fürs Gedächtnis von process vorschlägt.",
   "author": {
     "name": "discere AG"
   },

@@ -105,14 +105,36 @@ Eine Sitzung bleibt nie hängen. Die Hooks enden immer ohne Fehler.
 - **Ganz:** `/plugin`, dann «process» deaktivieren (oder im Terminal `claude plugin disable process@discere`).
 - **Für einen Ordner,** etwa für private Arbeit: in dessen `.claude/settings.local.json`
   `{"enabledPlugins": {"process@discere": false}}`.
+- Gibt eine Firma das Plugin in den Managed settings vor, geht beides nicht (siehe «Aktualisieren»).
 
 ### Aktualisieren
 
-Ein Update kommt nur mit einer neuen Version in `plugin.json`. Holen in Claude Code über `/plugin` → Marketplaces →
-discere, oder im Terminal mit `claude plugin update process@discere`. Das automatische Update bleibt für diese
-Sammlung aus (Vorgabe von Claude Code): Ein Update bringt Code, der in jeder Sitzung läuft — vorher ansehen, was
-sich geändert hat.
+**Empfohlen: das automatische Update einschalten.** Bei Sammlungen von Dritten wie `discere` ist es ab Werk aus.
+Einschalten in Claude Code: `/plugin` → Marketplaces → discere → «Enable auto-update». Danach holt Claude Code eine
+neue Version einige Minuten nach dem Start einer Sitzung. Sie gilt ab der nächsten Sitzung, in der laufenden nach
+`/reload-plugins`.
 
+Was das heisst: Ein Update kann neuen Code bringen, etwa für die Hooks, und neue Anweisungen an Claude im Skill. Mit
+dem automatischen Update gilt beides ohne Durchsicht in jeder Sitzung; die Hooks laufen mit deinen Rechten und mit
+dem Signal-Schlüssel. Ausliefern kann eine Version, wer im Repo schreiben darf; nach `main` kommt sie über einen PR.
+Die Liste unten fasst jede Version zusammen, den Code zeigt der Diff von `plugins/process`.
+
+- **Von Hand,** wer jedes Update vorher ansehen will: das automatische Update auslassen, den Diff lesen, dann im
+  Terminal `claude plugin update process@discere` (oder in Claude Code über `/plugin` → Marketplaces → discere) und
+  in `/plugin` prüfen, dass die gelesene Version installiert ist. Auch dann gilt sie ab der nächsten Sitzung oder nach
+  `/reload-plugins`.
+- **Firmen mit Claude Team oder Enterprise:** Ein Admin kann die Sammlung in den Managed settings vorgeben
+  (`extraKnownMarketplaces` mit `"autoUpdate": true`). Dann lässt sich das Update nicht mehr ausschalten, und mit
+  `enabledPlugins` dazu auch das Plugin nicht, nicht einmal für private Arbeit. Den eigenen Signal-Schlüssel trägt
+  jede Person selbst ein, nie einen in die Managed settings.
+- Ein Update erkennt Claude Code nur an einer neuen `version` in `plugin.json`.
+
+- **1.2.0** (P130): Der Skill sagt Claude, wann es etwas fürs Gedächtnis von process vorschlägt (bevor es
+  `arbeit_beenden` aufruft und wenn die Person «merk dir …» sagt, höchstens zwei Vorschläge je Sitzung, der Person
+  genannt, mit Ebene, Firma und Zeile), was hineingehört (was in keinem Dokument steht, nie ein Geheimnis, nichts zu
+  Kunden «ohne KI»; die Ebenen samt `kunde`, `ersetzt` statt eines Doppels) und dass Wissen zu Kunden, Projekten und
+  zur Arbeit der Firma nicht ins lokale Memory von Claude Code gehört. Die Hooks sind unverändert. Braucht process mit
+  P130 (Ebene «Kunde», Vorschläge an der Sitzung). Das README empfiehlt neu das automatische Update.
 - **1.1.1** (P129): Die Ordner der Ablage stehen auch dann im Zusatzkontext, wenn kein Signal ankommt (Schlüssel
   fehlt oder ist ungültig, curl fehlt, process ist nicht erreichbar oder antwortet mit einem Fehler). Bisher hiess es
   dann, sie seien nicht eingestellt. Der Skill: Hat jemand anderes die Ablage einer Aufgabe gesetzt, fragt Claude vor
